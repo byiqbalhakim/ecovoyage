@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+vendor/
+
+# Environment variables & secrets
+.env
+.env.local
+*.pem
+
+# Build outputs & cache
+dist/
+build/
+*.log
+
+# Operating system files
+.DS_Store
+Thumbs.db
+
+era5_data_2025/
+tree.txt
+tests/
+test.py
+
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Testing cache
+.pytest_cache/
