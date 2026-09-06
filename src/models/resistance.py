@@ -90,9 +90,8 @@ def relative_wind(u10, v10, V_ship_kn, ship_heading_deg):
     rel_v = v10 - ship_vy
     V_rel_ms = np.hypot(rel_u, rel_v)
 
-    wind_bearing = np.degrees(np.arctan2(rel_u, rel_v)) % 360
+    wind_bearing = np.degrees(np.arctan2(-rel_u, -rel_v)) % 360
     angle = np.abs(((wind_bearing - ship_heading_deg + 180) % 360) - 180)
-
     return V_rel_ms, angle
 
 
@@ -105,7 +104,7 @@ def A_T(angle_from_bow_deg, ballast_condition):
 
 def C_AA(angle_from_bow_deg, C_head=C_AA_HEAD):
     angle_rad = np.radians(angle_from_bow_deg)
-    shape = 0.5 * (1 - np.cos(angle_rad))
+    shape = 0.5 * (1 + np.cos(angle_rad))
     return C_head * (0.10 + 0.90 * shape)
 
 
