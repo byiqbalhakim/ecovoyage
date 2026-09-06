@@ -9,6 +9,7 @@ import pandas as pd
 
 from .config import DEFAULT_ROUTE_ID, DEFAULT_BALLAST_CONDITION, ROUTE_DEFINITIONS_PATH
 from .models.ship import SHIP
+from .models.emissions import voyage_cii
 from .data.routes import load_passage_plan, build_route_from_waypoints
 from .data.era5 import load_era5, extract_route_weather
 from .optimizer.leg_cost import build_cost_table
@@ -27,18 +28,9 @@ def run_prediction(route_id: str = DEFAULT_ROUTE_ID, weather_period: str = '2025
                     ballast_condition: str = DEFAULT_BALLAST_CONDITION,
                     include_wind: bool = False, vessel_id: int = 1, db_conn=None,
                     route_name: str = "Rotterdam - New York") -> int:
-    """
-    Runs the full pipeline (routes -> weather -> cost table -> DP optimizer)
-    for one route/period/ballast combination, saves everything to the DB
-    (including pre-built dashboard views), and returns the new prediction_id.
-
-    db_conn: pass an existing connection to reuse it (e.g. from a script
-    running several predictions in a row); otherwise one is opened and
-    closed automatically.
-    """
     owns_conn = db_conn is None
     conn = db_conn or get_connection()
-    init_db()  # no-op if tables already exist -- cheap safety net
+    init_db()
 
     try:
         legs = get_or_build_route_legs(conn, route_id, route_name)
@@ -61,10 +53,20 @@ def run_prediction(route_id: str = DEFAULT_ROUTE_ID, weather_period: str = '2025
         baseline_fuel_t = (cost_table[cost_table['rpm'] == baseline_rpm]['fuel_t'].sum()
                             if baseline_rpm is not None else None)
 
+        if is_feasible:
+            cii_result = voyage_cii(dp_fuel, SHIP['DWT'], legs['dist_nm'].sum())
+        else:
+            cii_result = {'total_co2_t': None, 'attained_cii': None,
+                           'reference_cii': None, 'cii_rating': 'N/A'}
+
         pred_id = insert_prediction(
             conn, route_id, vessel_id, weather_period, ballast_condition, deadline_h,
             include_wind, dp_fuel if is_feasible else None, baseline_rpm, baseline_fuel_t,
             savings_pct if is_feasible else None, is_feasible,
+            total_co2_t=cii_result['total_co2_t'],
+            attained_cii=cii_result['attained_cii'],
+            reference_cii=cii_result['reference_cii'],
+            cii_rating=cii_result['cii_rating'],
         )
 
         if is_feasible:
@@ -83,8 +85,6 @@ def run_prediction(route_id: str = DEFAULT_ROUTE_ID, weather_period: str = '2025
 
 
 def get_or_build_route_legs(conn, route_id: str, route_name: str) -> pd.DataFrame:
-    """Reuses stored legs if this route's already been loaded once;
-    otherwise builds them from the passage plan CSV and stores them."""
     existing = get_route_legs(conn, route_id)
     if not existing.empty:
         return existing

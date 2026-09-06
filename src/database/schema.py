@@ -231,6 +231,26 @@ CREATE TABLE IF NOT EXISTS dashboard_summary_view (
     created_at        TEXT NOT NULL
 )
 """
+# ---- Emissions/CII migration -- adds columns to the existing table ----
+
+MIGRATION_ADD_CO2 = "ALTER TABLE voyage_predictions ADD COLUMN total_co2_t REAL"
+MIGRATION_ADD_CII = "ALTER TABLE voyage_predictions ADD COLUMN attained_cii REAL"
+MIGRATION_ADD_CII_REF = "ALTER TABLE voyage_predictions ADD COLUMN reference_cii REAL"
+MIGRATION_ADD_CII_RATING = "ALTER TABLE voyage_predictions ADD COLUMN cii_rating TEXT"
+MIGRATION_ADD_LEG_CO2 = "ALTER TABLE dashboard_leg_view ADD COLUMN co2_t REAL"
+
+# -- new additions below --
+MIGRATION_ADD_SUMMARY_CO2 = "ALTER TABLE dashboard_summary_view ADD COLUMN total_co2_t REAL"
+MIGRATION_ADD_SUMMARY_CII = "ALTER TABLE dashboard_summary_view ADD COLUMN attained_cii REAL"
+MIGRATION_ADD_SUMMARY_CII_REF = "ALTER TABLE dashboard_summary_view ADD COLUMN reference_cii REAL"
+MIGRATION_ADD_SUMMARY_CII_RATING = "ALTER TABLE dashboard_summary_view ADD COLUMN cii_rating TEXT"
+
+EMISSIONS_MIGRATIONS = [
+    MIGRATION_ADD_CO2, MIGRATION_ADD_CII, MIGRATION_ADD_CII_REF,
+    MIGRATION_ADD_CII_RATING, MIGRATION_ADD_LEG_CO2,
+    MIGRATION_ADD_SUMMARY_CO2, MIGRATION_ADD_SUMMARY_CII,
+    MIGRATION_ADD_SUMMARY_CII_REF, MIGRATION_ADD_SUMMARY_CII_RATING,
+]
 
 ALL_SCHEMAS = [
     VESSELS, ENGINE_SFOC, PROPELLER_CURVE,

@@ -43,3 +43,31 @@ def init_db(db_path=DB_PATH):
                 conn.execute(ddl)
     finally:
         conn.close()
+
+def run_emissions_migration(db_path=DB_PATH):
+    """One-time migration to add CO2/CII columns to existing tables.
+    Safe to call repeatedly -- ignores 'duplicate column' errors."""
+    from .schema import EMISSIONS_MIGRATIONS
+    conn = get_connection(db_path)
+    try:
+        with conn:
+            for ddl in EMISSIONS_MIGRATIONS:
+                try:
+                    conn.execute(ddl)
+                except Exception as e:
+                    if 'duplicate column' not in str(e).lower():
+                        raise
+    finally:
+        conn.close()
+    from .schema import EMISSIONS_MIGRATIONS
+    conn = get_connection(db_path)
+    try:
+        with conn:
+            for ddl in EMISSIONS_MIGRATIONS:
+                try:
+                    conn.execute(ddl)
+                except Exception as e:
+                    if 'duplicate column' not in str(e).lower():
+                        raise
+    finally:
+        conn.close()

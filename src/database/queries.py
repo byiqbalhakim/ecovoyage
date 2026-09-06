@@ -104,18 +104,20 @@ def insert_weather_era5(conn, route_id: str, weather_df: pd.DataFrame):
 def insert_prediction(conn, route_id: str, vessel_id: int, weather_period: str,
                        ballast_condition: str, deadline_h: float, include_wind: bool,
                        dp_fuel_t: float, baseline_rpm: float, baseline_fuel_t: float,
-                       savings_pct: float, is_feasible: bool) -> int:
-    """Returns the new prediction_id. This is what run_prediction() calls
-    at the end of the pipeline (Phase 10)."""
+                       savings_pct: float, is_feasible: bool,
+                       total_co2_t: float = None, attained_cii: float = None,
+                       reference_cii: float = None, cii_rating: str = None) -> int:
+    """Returns the new prediction_id."""
     cur = conn.execute(
         """INSERT INTO voyage_predictions
            (route_id, vessel_id, weather_period, ballast_condition, deadline_h,
             include_wind, dp_fuel_t, baseline_rpm, baseline_fuel_t, savings_pct,
-            is_feasible, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            is_feasible, created_at, total_co2_t, attained_cii, reference_cii, cii_rating)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (route_id, vessel_id, weather_period, ballast_condition, deadline_h,
          int(include_wind), dp_fuel_t, baseline_rpm, baseline_fuel_t, savings_pct,
-         int(is_feasible), datetime.now(timezone.utc).isoformat())
+         int(is_feasible), datetime.now(timezone.utc).isoformat(),
+         total_co2_t, attained_cii, reference_cii, cii_rating)
     )
     return cur.lastrowid
 
@@ -167,13 +169,10 @@ def build_dashboard_views(conn, prediction_id: int, route_name: str, weather_lab
     """
     Pre-computes everything the dashboard will ever need to display this
     prediction, and stores it as flat rows. Call this once, right after
-    insert_prediction() + insert_prediction_legs(). The dashboard should
-    never need to query anything except these two tables.
-
-    weather_df: optional, the SUMMARIZED weather (output of era5.py's
-    extract_route_weather() / build_leg_weather_summary()), with columns
-    hs_mean, wind_speed_mean, indexed by leg_point -- NOT raw hs_m/u10_ms/v10_ms.
+    insert_prediction() + insert_prediction_legs().
     """
+    from ..models.emissions import CO2_FACTOR_HFO
+
     header = conn.execute(
         'SELECT * FROM voyage_predictions WHERE prediction_id = ?', (prediction_id,)
     ).fetchone()
@@ -191,6 +190,7 @@ def build_dashboard_views(conn, prediction_id: int, route_name: str, weather_lab
     legs['baseline_fuel_t'] = header['baseline_fuel_t'] * (legs['dist_nm'] / total_dist)
     legs['cum_dp_fuel_t'] = legs['fuel_t'].cumsum()
     legs['leg_label'] = 'Leg ' + (legs['leg_id'] + 1).astype(str)
+    legs['co2_t'] = legs['fuel_t'] * CO2_FACTOR_HFO
 
     if weather_df is not None and not weather_df.empty and 'leg_point' in weather_df.columns:
         weather_by_leg = weather_df.set_index('leg_point')
@@ -204,15 +204,16 @@ def build_dashboard_views(conn, prediction_id: int, route_name: str, weather_lab
     conn.executemany(
         """INSERT INTO dashboard_leg_view
            (prediction_id, route_id, weather_period, leg_id, leg_label, dp_rpm, dp_fuel_t,
-            dp_time_h, dp_v_kn, baseline_rpm, baseline_fuel_t, cum_dp_fuel_t, hs_m, wind_speed_ms)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            dp_time_h, dp_v_kn, baseline_rpm, baseline_fuel_t, cum_dp_fuel_t, hs_m, wind_speed_ms, co2_t)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         [
             (prediction_id, header['route_id'], header['weather_period'], int(r.leg_id), r.leg_label,
              float(r.rpm), float(r.fuel_t), float(r.time_h),
              float(r.v_kn) if pd.notna(r.v_kn) else None,
              float(header['baseline_rpm']), float(r.baseline_fuel_t), float(r.cum_dp_fuel_t),
              float(r.hs_m) if pd.notna(r.hs_m) else None,
-             float(r.wind_speed_ms) if pd.notna(r.wind_speed_ms) else None)
+             float(r.wind_speed_ms) if pd.notna(r.wind_speed_ms) else None,
+             float(r.co2_t))
             for r in legs.itertuples()
         ]
     )
@@ -222,13 +223,15 @@ def build_dashboard_views(conn, prediction_id: int, route_name: str, weather_lab
         """INSERT INTO dashboard_summary_view
            (prediction_id, route_id, route_name, weather_period, weather_label, ballast_condition,
             dp_fuel_t, baseline_fuel_t, savings_pct, savings_label, is_feasible, n_legs,
-            total_dist_nm, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            total_dist_nm, created_at, total_co2_t, attained_cii, reference_cii, cii_rating)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (prediction_id, header['route_id'], route_name, header['weather_period'], weather_label,
          header['ballast_condition'], header['dp_fuel_t'], header['baseline_fuel_t'],
          header['savings_pct'],
          f"{header['savings_pct']:.1f}% saved" if header['savings_pct'] is not None else 'Infeasible',
-         header['is_feasible'], len(legs), float(total_dist), header['created_at'])
+         header['is_feasible'], len(legs), float(total_dist), header['created_at'],
+         header.get('total_co2_t'), header.get('attained_cii'),
+         header.get('reference_cii'), header.get('cii_rating'))
     )
 
 
